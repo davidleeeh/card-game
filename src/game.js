@@ -1,40 +1,75 @@
 /* eslint-disable no-undef */
-const { Suits, Ranks } = require("./config");
-const Deck = require("./deck");
+const { createDeck } = require("./deck");
 
-function createGame() {
-    var players = [];
-    var deck = new Deck();
+function createGame(deckCount = 1) {
+    // Maps player name to the state of the corresponding player state.
+    // Each player state is an object like the one below:
+    // {
+    //    player: "Player1",
+    //    history: [],
+    //    score: 0
+    // }
+    //
+    // The history atrribute is an array containing the card drawn by the user in each round.
+    var playerStates = new Map();
+
+    var deck = createDeck(deckCount);
     var isOver = false;
-    var currentRound = new Map();
-    var rounds = [];
+    var currentRound = 0;
+    var callsInCurrentRound = 0;
 
     deck.shuffle();
 
+    return {
+        addPlayer,
+        draw,
+        skip,
+        getHandsInRound,
+        getWinnersInRound,
+        isGameOver,
+        getCurrentRound,
+        getPlayerScores,
+        getCardCount
+    };
+
     function addPlayer(playerName) {
-        if (players.includes(playerName)) {
+        if (playerStates.has(playerName)) {
             throw new Error(`name has already been added.`);
         }
 
-        players.push(playerName);
+        playerStates.set(playerName, {
+            player: playerName,
+            history: [],
+            score: 0
+        });
     }
 
     function validatePlayerAction(playerName) {
-        if (players.includes(playerName) === false) {
+        if (playerStates.has(playerName) === false) {
             throw new Error(`${playerName} does not exist`);
         }
 
-        if (currentRound.has(playerName)) {
+        if (currentRound < playerStates.get(playerName).history.length) {
             throw Error(`${playerName} has already drawn a card`);
         }
     }
 
-    function checkGameStatus() {
-        if (currentRound.size === players.length) {
-            rounds.push(currentRound);
-            currentRound = new Map();
+    function updateGameStates() {
+        if (callsInCurrentRound === playerStates.size) {
+            const winners = getWinnersInRound(currentRound);
 
-            if (deck.cards.length < players.length) {
+            for (let name of winners) {
+                const prevState = playerStates.get(name);
+                playerStates.set(name, {
+                    ...prevState,
+                    score: prevState.score + 1
+                });
+            }
+
+            currentRound += 1;
+            callsInCurrentRound = 0;
+
+            if (deck.getCount() < playerStates.size) {
                 isOver = true;
             }
         }
@@ -48,10 +83,12 @@ function createGame() {
         validatePlayerAction(playerName);
 
         const card = deck.draw();
-        currentRound.set(playerName, card);
+        playerStates.get(playerName).history.push(card);
+        callsInCurrentRound += 1;
 
-        print();
-        checkGameStatus();
+        updateGameStates();
+
+        return card;
     }
 
     function skip(playerName) {
@@ -61,25 +98,13 @@ function createGame() {
 
         validatePlayerAction(playerName);
 
-        currentRound.set(playerName, null);
+        playerStates.get(playerName).history.push(null);
+        callsInCurrentRound += 1;
 
-        print();
-
-        checkGameStatus();
+        updateGameStates();
     }
 
-    function compareHands(hand1, hand2) {
-        const card1 = hand1.card;
-        const card2 = hand2.card;
-
-        if (card1 === null && card2 === null) {
-            return 0;
-        } else if (card1 === null && card2 !== null) {
-            return 1;
-        } else if (card1 !== null && card2 === null) {
-            return -1;
-        }
-
+    function compareCards(card1, card2) {
         const { rank: rank1, suit: suit1 } = card1;
         const { rank: rank2, suit: suit2 } = card2;
 
@@ -96,85 +121,67 @@ function createGame() {
         }
     }
 
-    function compareResults(result1, result2) {
-        return result2.score - result1.score;
-    }
-
-    function getGameResult() {
-        const scores = new Map();
-
-        players.forEach((p) => {
-            scores.set(p, 0);
-        });
-
-        rounds.forEach((round) => {
-            console.log(round);
-            const hands = Array.from(round.entries())
-                .map(([player, card]) => {
-                    return { player, card };
-                })
-                .sort(compareHands);
-            console.log("Sorted hands: ", hands);
-
-            const winners = [];
-            if (hands[0].card !== null) {
-                winners.push(hands[0].player);
-
-                for (let i = 1; i < hands.length; i++) {
-                    if (
-                        hands[i].card !== null &&
-                        hands[i].card.rank == hands[0].card.rank &&
-                        hands[i].card.suit == hands[0].card.suit
-                    ) {
-                        winners.push(hands[i].player);
-                    }
-                }
-
-                for (let name of winners) {
-                    scores.set(name, scores.get(name) + 1);
-                }
-            }
-
-            console.log(`Winners: ${winners}`);
-            console.log("Scores: ", scores);
-        });
-
-        const results = Array.from(scores.entries())
-            .map(([player, score]) => {
-                return { player, score };
+    function getHandsInRound(round) {
+        const entries = Array.from(playerStates.values());
+        return entries
+            .filter((entry) => {
+                return entry.history.length > round;
             })
-            .sort(compareResults);
-        return results;
+            .map((entry) => {
+                const { player, history } = entry;
+                return {
+                    player,
+                    card: history[round]
+                };
+            });
     }
 
-    function print() {
-        console.log(
-            `==== Round ${rounds.length + 1}: ${deck.getCount()} cards left ====`
-        );
-        for (let [player, card] of Array.from(currentRound.entries())) {
-            const cardDisplay = card === null ? "skipped" : cardStr(card);
-            console.log(`${player}: ${cardDisplay}`);
+    function getWinnersInRound(round) {
+        // Simply return empty array if current round is not finished yet
+        if (round === currentRound && callsInCurrentRound < playerStates.size) {
+            return [];
         }
-        console.log("");
+
+        const allHands = getHandsInRound(round);
+
+        const nonEmptyHands = allHands
+            .filter((hand) => hand.card !== null)
+            .sort((hand1, hand2) => {
+                return compareCards(hand1.card, hand2.card);
+            });
+
+        if (nonEmptyHands.length > 0) {
+            const bestHand = nonEmptyHands[0];
+
+            return nonEmptyHands
+                .filter((hand) => {
+                    return compareCards(hand.card, bestHand.card) === 0;
+                })
+                .map((hand) => {
+                    return hand.player;
+                });
+        } else {
+            return [];
+        }
     }
 
-    function cardStr(card) {
-        const { suit, rank } = card;
-        return `${suit.label}-${rank.label}`;
+    function getPlayerScores() {
+        return Array.from(playerStates.values()).map(({ player, score }) => {
+            return { player, score };
+        });
+    }
+
+    function getCardCount() {
+        return deck.getCount();
+    }
+
+    function getCurrentRound() {
+        return currentRound;
     }
 
     function isGameOver() {
         return isOver;
     }
-
-    return {
-        addPlayer,
-        draw,
-        skip,
-        print,
-        isGameOver,
-        getGameResult
-    };
 }
 
 module.exports = { createGame };

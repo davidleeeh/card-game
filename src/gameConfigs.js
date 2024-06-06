@@ -1,10 +1,9 @@
-
 const Suits = {
     CLUB: { val: 1, label: "club" },
     DIAMOND: { val: 2, label: "diamond" },
     HEART: { val: 3, label: "heart" },
     SPADE: { val: 4, label: "spade" }
-}
+};
 
 const Ranks = {
     ONE: { val: 1, label: "A" },
@@ -19,7 +18,7 @@ const Ranks = {
     TEN: { val: 10, label: "10" },
     ELEVEN: { val: 11, label: "J" },
     TWELVE: { val: 12, label: "Q" },
-    THIRTEEN: { val: 13, label: "K" },
+    THIRTEEN: { val: 13, label: "K" }
 };
 
-module.exports = { Suits, Ranks }
+module.exports = { Suits, Ranks };
